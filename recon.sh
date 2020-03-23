@@ -25,28 +25,28 @@ BLACKLIST=$3
 SED=s/$/.$DOMAIN/
 
 passive() {
-	amass enum -passive -src -o $DOMAIN/$DOMAIN-out-amass.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
+	amass enum -passive -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
 	echo "[AMASS DONE]"
-	cat $DOMAIN/$DOMAIN-out-amass.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/$DOMAIN-hosts-amass.txt
-	sed $SED $WORDLIST > $DOMAIN/$DOMAIN-hosts-wordlist.txt	
+	cat $DOMAIN/out-amass-$DOMAIN.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass-$DOMAIN.txt
+	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist-$DOMAIN.txt	
 }
 
 active() {
-	amass enum -active -brute -src -o $DOMAIN/$DOMAIN-out-amass.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
+	amass enum -active -brute -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
 	echo "[AMASS DONE]"
-	cat $DOMAIN/$DOMAIN-out-amass.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/$DOMAIN-hosts-amass.txt
-	sed $SED $WORDLIST > $DOMAIN/$DOMAIN-hosts-wordlist.txt	
+	cat $DOMAIN/out-amass-$DOMAIN.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass-$DOMAIN.txt
+	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist-$DOMAIN.txt	
 }
 
 all() {
-	cat $DOMAIN/$DOMAIN-hosts-amass.txt $DOMAIN/$DOMAIN-hosts-wordlist.txt > $DOMAIN/$DOMAIN-hosts-all.txt
-	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/$DOMAIN-massdns.out $DOMAIN/$DOMAIN-hosts-all.txt
+	cat $DOMAIN/hosts-amass-$DOMAIN.txt $DOMAIN/hosts-wordlist-$DOMAIN.txt > $DOMAIN/hosts-all-$DOMAIN.txt
+	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/massdns-$DOMAIN.out $DOMAIN/hosts-all-$DOMAIN.txt
 	#altdns -i subdomains.txt -o $DOMAIN-altdns.out -w words.txt -r -s results_output.txt
-	cat $DOMAIN/$DOMAIN-massdns.out | awk '{print $3}' | sort -u | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" > $DOMAIN/$DOMAIN-ips-online.txt
-	masscan -iL $DOMAIN/$DOMAIN-ips-online.txt --rate 1000 -p1-65535 --open -oX $DOMAIN/$DOMAIN-masscan.xml
-	open_ports=$(cat $DOMAIN/$DOMAIN-masscan.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | paste -sd,)
-	echo open_ports > $DOMAIN/$DOMAIN-open-ports.txt
-	cat $DOMAIN/$DOMAIN-masscan.xml | grep portid | cut -d "\"" -f 4 | sort -V | uniq > $DOMAIN/$DOMAIN-nmap_targets.tmp
+	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $3}' | sort -u | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" > $DOMAIN/ips-online-$DOMAIN.txt
+	masscan -iL $DOMAIN/ips-online-$DOMAIN.txt --rate 1000 -p1-65535 --open -oX $DOMAIN/masscan-$DOMAIN.xml
+	open_ports=$(cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | paste -sd,)
+	echo $open_ports > $DOMAIN/open-ports-$DOMAIN.txt
+	cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 4 | sort -V | uniq > $DOMAIN/nmap_targets-$DOMAIN.tmp
 }
 mkdir $DOMAIN
 
