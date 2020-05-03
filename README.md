@@ -1,1 +1,0 @@
-# smart_domain_enum
