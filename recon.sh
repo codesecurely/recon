@@ -22,6 +22,9 @@ display_usage() {
 DOMAIN=$1
 WORDLIST=$2
 BLACKLIST=$3
+MODE=$4
+EXISTING_LIST=$5
+
 SED=s/$/.$DOMAIN/
 
 passive() {
@@ -49,8 +52,8 @@ active() {
 
 all() {
 	cat $DOMAIN/hosts-amass-$DOMAIN.txt $DOMAIN/hosts-wordlist-$DOMAIN.txt $DOMAIN/hosts-ldnswalk-$DOMAIN.txt > $DOMAIN/hosts-all-$DOMAIN.txt
-	if [ -n "$5"]; then
-		cat $5 >> $DOMAIN/hosts-all-$DOMAIN.txt
+	if [ -n "$EXISTING_LIST"]; then
+		cat $EXISTING_LIST >> $DOMAIN/hosts-all-$DOMAIN.txt
 		cat $DOMAIN/hosts-all-$DOMAIN.txt | sort -u > $DOMAIN/hosts-all-$DOMAIN.txt
 	fi
 	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/massdns-$DOMAIN.out $DOMAIN/hosts-all-$DOMAIN.txt
@@ -65,7 +68,7 @@ all() {
 }
 mkdir $DOMAIN
 
-case "$4" in
+case "$MODE" in
 passive)
 	passive
 	;;
