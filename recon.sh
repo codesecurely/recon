@@ -27,6 +27,65 @@ EXISTING_LIST=$5
 
 SED=s/$/.$DOMAIN/
 
+amass() {
+	if [ -e "$DOMAIN/hosts-amass-$DOMAIN.txt" ]; then
+		return
+	fi
+	amass enum -active -brute -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN 
+	echo "[AMASS DONE]"
+	cat $DOMAIN/out-amass-$DOMAIN.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass-$DOMAIN.txt
+	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist-$DOMAIN.txt	
+
+}
+
+ldns_walk() {
+	if [ -e "$DOMAIN/hosts-ldnswalk-$DOMAIN.txt" ]; then
+		return
+	fi
+	
+	for i in $(echo $DOMAIN | tr "," "\n")
+	do
+		ldns-walk $i | awk '{print $1}' >> $DOMAIN/hosts-ldnswalk-$DOMAIN.txt
+	done
+	echo "[APPENDING WORDLIST TO DOMAIN FOR BRUTE FORCE]"
+	for i in $(echo $DOMAIN | tr "," "\n")
+	do
+	sed s/$/.$i/ $WORDLIST >> $DOMAIN/hosts-wordlist-$DOMAIN.txt	
+	done
+	echo "[LDNS-WALK DONE]"
+}
+
+massdns() {
+	if [ -e "$DOMAIN/ips-online-$DOMAIN.txt" ]; then
+		return
+	fi
+	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/massdns-$DOMAIN.out $DOMAIN/hosts-all-$DOMAIN.txt
+	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $3}' | sort -u | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" > $DOMAIN/ips-online-$DOMAIN.txt
+}
+
+masscan() {
+	if [ -e "$DOMAIN/nmap_targets-$DOMAIN.tmp" ]; then
+		return
+	fi
+	masscan -iL $DOMAIN/ips-online-$DOMAIN.txt --rate 1000000 -p1-65535 --open -oX $DOMAIN/masscan-$DOMAIN.xml
+	open_ports=$(cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | paste -sd,)
+	echo $open_ports > $DOMAIN/open-ports-$DOMAIN.txt
+	cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 4 | sort -V | uniq > $DOMAIN/nmap_targets-$DOMAIN.tmp
+}
+
+nmap() {
+	if [ -e "$DOMAIN/nmap_results-$DOMAIN" ]; then
+		return
+	fi
+	nmap -Pn -sC -sV -p $(cat $DOMAIN/open-ports-$DOMAIN.txt) -iL $DOMAIN/nmap_targets-$DOMAIN.tmp -oA $DOMAIN/nmap_results-$DOMAIN
+}
+
+aquatone() {
+	if [ -e "$DOMAIN/aquatone" ]; then
+		return
+	fi
+	cat $DOMAIN/nmap_results-$DOMAIN.xml aquatone -scan-timeout 900 -nmap -out $DOMAIN/aquatone/	
+}
 passive() {
 	amass enum -passive -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
 	echo "[AMASS DONE]"
@@ -44,27 +103,30 @@ passive() {
 }
 
 active() {
-	amass enum -active -brute -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
+	amass enum -active -brute -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN 
 	echo "[AMASS DONE]"
 	cat $DOMAIN/out-amass-$DOMAIN.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass-$DOMAIN.txt
 	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist-$DOMAIN.txt	
 }
 
 all() {
+	if [ -n "$DOMAIN/hosts-ldnswalk-$DOMAIN.txt" ]; then
+		touch $DOMAIN/hosts-ldnswalk-$DOMAIN.txt
+	fi
 	cat $DOMAIN/hosts-amass-$DOMAIN.txt $DOMAIN/hosts-wordlist-$DOMAIN.txt $DOMAIN/hosts-ldnswalk-$DOMAIN.txt > $DOMAIN/hosts-all-$DOMAIN.txt
-	if [ -n "$EXISTING_LIST"]; then
+	if [ -n "$EXISTING_LIST" ]; then
 		cat $EXISTING_LIST >> $DOMAIN/hosts-all-$DOMAIN.txt
 		cat $DOMAIN/hosts-all-$DOMAIN.txt | sort -u > $DOMAIN/hosts-all-$DOMAIN.txt
 	fi
 	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/massdns-$DOMAIN.out $DOMAIN/hosts-all-$DOMAIN.txt
 	#altdns -i subdomains.txt -o $DOMAIN-altdns.out -w words.txt -r -s results_output.txt
 	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $3}' | sort -u | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" > $DOMAIN/ips-online-$DOMAIN.txt
-	masscan -iL $DOMAIN/ips-online-$DOMAIN.txt --rate 10000000 -p1-65535 --open -oX $DOMAIN/masscan-$DOMAIN.xml
+	masscan -iL $DOMAIN/ips-online-$DOMAIN.txt --rate 1000000 -p1-65535 --open -oX $DOMAIN/masscan-$DOMAIN.xml
 	open_ports=$(cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | paste -sd,)
 	echo $open_ports > $DOMAIN/open-ports-$DOMAIN.txt
 	cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 4 | sort -V | uniq > $DOMAIN/nmap_targets-$DOMAIN.tmp
 	nmap -Pn -sC -sV -p $(cat $DOMAIN/open-ports-$DOMAIN.txt) -iL $DOMAIN/nmap_targets-$DOMAIN.tmp -oA $DOMAIN/nmap_results-$DOMAIN
-	cat $DOMAIN/nmap_results-$DOMAIN.xml aquatone -scan-timeout 3000 -nmap -out $DOMAIN/aquatone/ 
+	cat $DOMAIN/nmap_results-$DOMAIN.xml aquatone -scan-timeout 900 -nmap -out $DOMAIN/aquatone/ 
 }
 mkdir $DOMAIN
 
@@ -76,8 +138,11 @@ active)
 	active
 	;;
 all)
-	active
-	all
+	amass
+	massdns
+	masscan
+	nmap
+	aquatone
 	;;
 massdns)
 	passive
