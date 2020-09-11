@@ -1,5 +1,7 @@
 #!/bin/bash
 
+whoami 
+
 display_usage() { 
 	echo -e "Usage:\n ./recon.sh DOMAIN WORDLIST BLACKLIST (pass example.com if none) MODE (active, passive, all) EXISTING_LIST \n\n DOMAIN - comma separated list of domains, WORDLIST - wordlist to be used, BLACKLIST - comma separated list of domains out of scope" 
 	} 
@@ -17,7 +19,7 @@ display_usage() {
 	then 
 		display_usage
 		exit 0
-	fi  
+	fi
 
 DOMAIN=$1
 WORDLIST=$2
@@ -27,18 +29,25 @@ EXISTING_LIST=$5
 
 SED=s/$/.$DOMAIN/
 
-amass() {
+run_amass() {
+	echo "AMASS"
 	if [ -e "$DOMAIN/hosts-amass-$DOMAIN.txt" ]; then
 		return
 	fi
-	amass enum -active -brute -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN 
+	echo "[STARTING AMASS]"
+	amass enum -active -brute -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN -config config.ini
 	echo "[AMASS DONE]"
 	cat $DOMAIN/out-amass-$DOMAIN.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass-$DOMAIN.txt
-	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist-$DOMAIN.txt	
+	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist-$DOMAIN.txt
+	cat $DOMAIN/hosts-amass-$DOMAIN.txt $DOMAIN/hosts-wordlist-$DOMAIN.txt > $DOMAIN/hosts-all-$DOMAIN.txt
+	if [ -n "$EXISTING_LIST" ]; then
+		cat $EXISTING_LIST >> $DOMAIN/hosts-all-$DOMAIN.txt
+		cat $DOMAIN/hosts-all-$DOMAIN.txt | sort -u > $DOMAIN/hosts-all-$DOMAIN.txt
+	fi	
 
 }
 
-ldns_walk() {
+run_ldns_walk() {
 	if [ -e "$DOMAIN/hosts-ldnswalk-$DOMAIN.txt" ]; then
 		return
 	fi
@@ -53,9 +62,11 @@ ldns_walk() {
 	sed s/$/.$i/ $WORDLIST >> $DOMAIN/hosts-wordlist-$DOMAIN.txt	
 	done
 	echo "[LDNS-WALK DONE]"
+	cat $DOMAIN/hosts-ldnswalk-$DOMAIN.txt >> $DOMAIN/hosts-all-$DOMAIN.txt
+
 }
 
-massdns() {
+run_massdns() {
 	if [ -e "$DOMAIN/ips-online-$DOMAIN.txt" ]; then
 		return
 	fi
@@ -63,7 +74,7 @@ massdns() {
 	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $3}' | sort -u | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" > $DOMAIN/ips-online-$DOMAIN.txt
 }
 
-masscan() {
+run_masscan() {
 	if [ -e "$DOMAIN/nmap_targets-$DOMAIN.tmp" ]; then
 		return
 	fi
@@ -73,19 +84,26 @@ masscan() {
 	cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 4 | sort -V | uniq > $DOMAIN/nmap_targets-$DOMAIN.tmp
 }
 
-nmap() {
-	if [ -e "$DOMAIN/nmap_results-$DOMAIN" ]; then
+run_nmap() {
+	if [ -e "$DOMAIN/nmap_results-$DOMAIN.xml" ]; then
 		return
 	fi
-	nmap -Pn -sC -sV -p $(cat $DOMAIN/open-ports-$DOMAIN.txt) -iL $DOMAIN/nmap_targets-$DOMAIN.tmp -oA $DOMAIN/nmap_results-$DOMAIN
+	open_ports=$(cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | wc -l)
+	
+	if [ $open_ports -le 100 ]; then
+		nmap -Pn -sC -sV -p $(cat $DOMAIN/open-ports-$DOMAIN.txt) -iL $DOMAIN/nmap_targets-$DOMAIN.tmp -oA $DOMAIN/nmap_results-$DOMAIN
+	else
+		nmap -Pn -sC -sV -p- -v -iL $DOMAIN/nmap_targets-$DOMAIN.tmp -oA $DOMAIN/nmap_results-$DOMAIN
+	fi
 }
 
-aquatone() {
+run_aquatone() {
 	if [ -e "$DOMAIN/aquatone" ]; then
 		return
 	fi
-	cat $DOMAIN/nmap_results-$DOMAIN.xml aquatone -scan-timeout 900 -nmap -out $DOMAIN/aquatone/	
+	cat $DOMAIN/nmap_results-$DOMAIN.xml | aquatone -scan-timeout 900 -nmap -out $DOMAIN/aquatone/	
 }
+
 passive() {
 	amass enum -passive -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
 	echo "[AMASS DONE]"
@@ -138,15 +156,19 @@ active)
 	active
 	;;
 all)
-	amass
-	massdns
-	masscan
-	nmap
-	aquatone
+	run_amass
+	run_massdns
+	run_masscan
+	run_nmap
+	run_aquatone
 	;;
-massdns)
-	passive
-	all
+reset)
+	rm -rf $DOMAIN/
+	run_amass
+	run_massdns
+	run_masscan
+	run_nmap
+	run_aquatone
 	;;
 esac
 
