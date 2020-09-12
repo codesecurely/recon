@@ -31,7 +31,7 @@ SED=s/$/.$DOMAIN/
 
 run_amass() {
 	echo "AMASS"
-	if [ -e "$DOMAIN/hosts-amass-$DOMAIN.txt" ]; then
+	if [ -s "$DOMAIN/hosts-amass-$DOMAIN.txt" ]; then
 		return
 	fi
 	echo "[STARTING AMASS]"
@@ -48,7 +48,7 @@ run_amass() {
 }
 
 run_ldns_walk() {
-	if [ -e "$DOMAIN/hosts-ldnswalk-$DOMAIN.txt" ]; then
+	if [ -s "$DOMAIN/hosts-ldnswalk-$DOMAIN.txt" ]; then
 		return
 	fi
 	
@@ -67,7 +67,7 @@ run_ldns_walk() {
 }
 
 run_massdns() {
-	if [ -e "$DOMAIN/ips-online-$DOMAIN.txt" ]; then
+	if [ -s "$DOMAIN/ips-online-$DOMAIN.txt" ]; then
 		return
 	fi
 	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/massdns-$DOMAIN.out $DOMAIN/hosts-all-$DOMAIN.txt
@@ -75,7 +75,7 @@ run_massdns() {
 }
 
 run_masscan() {
-	if [ -e "$DOMAIN/nmap_targets-$DOMAIN.tmp" ]; then
+	if [ -s "$DOMAIN/nmap_targets-$DOMAIN.tmp" ]; then
 		return
 	fi
 	masscan -iL $DOMAIN/ips-online-$DOMAIN.txt --rate 1000000 -p1-65535 --open -oX $DOMAIN/masscan-$DOMAIN.xml
@@ -85,7 +85,7 @@ run_masscan() {
 }
 
 run_nmap() {
-	if [ -e "$DOMAIN/nmap_results-$DOMAIN.xml" ]; then
+	if [ -s "$DOMAIN/nmap_results-$DOMAIN.xml" ]; then
 		return
 	fi
 	open_ports=$(cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | wc -l)
@@ -98,77 +98,77 @@ run_nmap() {
 }
 
 run_aquatone() {
-	if [ -e "$DOMAIN/aquatone" ]; then
+	if [ -d "$DOMAIN/aquatone" ]; then
 		return
 	fi
 	cat $DOMAIN/nmap_results-$DOMAIN.xml | aquatone -scan-timeout 900 -nmap -out $DOMAIN/aquatone/	
 }
 
-passive() {
-	amass enum -passive -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN
-	echo "[AMASS DONE]"
-	cat $DOMAIN/out-amass-$DOMAIN.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass-$DOMAIN.txt
-	for i in $(echo $DOMAIN | tr "," "\n")
+run_gobuster_recurse() {
+	if [ ! -e "$DOMAIN/aquatone/aquatone_urls.txt" ] || [ -s "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
+		return
+	fi
+	#[[ -n $line ]] so it doesn't skip last line if there's no empty newline
+	cat $DOMAIN/aquatone/aquatone_urls.txt | while read line || [[ -n $line ]];
 	do
-		ldns-walk $i | awk '{print $1}' >> $DOMAIN/hosts-ldnswalk-$DOMAIN.txt
-	done
-	echo "[APPENDING WORDLIST TO DOMAIN FOR BRUTE FORCE]"
-	for i in $(echo $DOMAIN | tr "," "\n")
-	do
-	sed s/$/.$i/ $WORDLIST >> $DOMAIN/hosts-wordlist-$DOMAIN.txt	
-	done
-	echo "[DONE]"
+		$(pwd)/gobuster_recurse.sh $line "/home/recon/tools/raft-medium-directories.txt" 2 $DOMAIN/gobuster-endpoints-$DOMAIN.txt
+	done 
 }
 
-active() {
-	amass enum -active -brute -src -o $DOMAIN/out-amass-$DOMAIN.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN 
-	echo "[AMASS DONE]"
-	cat $DOMAIN/out-amass-$DOMAIN.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass-$DOMAIN.txt
-	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist-$DOMAIN.txt	
+run_gobuster_vhosts() {
+	if [ ! -e "$DOMAIN/massdns-$DOMAIN.out" ] || [ -s "$DOMAIN/gobuster-vhosts-all.txt" ]; then
+		return
+	fi
+	#[[ -n $line ]] so it doesn't skip last line if there's no empty newline
+	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $1}' | sort -u | sed 's/.$//' | while read line || [[ -n $line ]];
+	do
+		gobuster vhost -u $line -w "/home/recon/tools/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
+		cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt	
+	done
+	for i in $(echo $DOMAIN | tr "," "\n")
+	do
+		gobuster vhost -u $i -w "/home/recon/tools/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
+		cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt		
+	done
+	rm $DOMAIN/gobuster-vhosts.tmp  
 }
 
-all() {
-	if [ -n "$DOMAIN/hosts-ldnswalk-$DOMAIN.txt" ]; then
-		touch $DOMAIN/hosts-ldnswalk-$DOMAIN.txt
+run_gobuster_files() {
+	for i in $(echo $DOMAIN | tr "," "\n")
+	do
+		gobuster dir --wildcard -s 200,204 -u $i -w "/home/recon/tools/raft-large-files-lowercase.txt" -t 10 -o $DOMAIN/gobuster-files.tmp
+	
+	done
+	if [ ! -e "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
+		return
 	fi
-	cat $DOMAIN/hosts-amass-$DOMAIN.txt $DOMAIN/hosts-wordlist-$DOMAIN.txt $DOMAIN/hosts-ldnswalk-$DOMAIN.txt > $DOMAIN/hosts-all-$DOMAIN.txt
-	if [ -n "$EXISTING_LIST" ]; then
-		cat $EXISTING_LIST >> $DOMAIN/hosts-all-$DOMAIN.txt
-		cat $DOMAIN/hosts-all-$DOMAIN.txt | sort -u > $DOMAIN/hosts-all-$DOMAIN.txt
-	fi
-	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/massdns-$DOMAIN.out $DOMAIN/hosts-all-$DOMAIN.txt
-	#altdns -i subdomains.txt -o $DOMAIN-altdns.out -w words.txt -r -s results_output.txt
-	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $3}' | sort -u | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" > $DOMAIN/ips-online-$DOMAIN.txt
-	masscan -iL $DOMAIN/ips-online-$DOMAIN.txt --rate 1000000 -p1-65535 --open -oX $DOMAIN/masscan-$DOMAIN.xml
-	open_ports=$(cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | paste -sd,)
-	echo $open_ports > $DOMAIN/open-ports-$DOMAIN.txt
-	cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 4 | sort -V | uniq > $DOMAIN/nmap_targets-$DOMAIN.tmp
-	nmap -Pn -sC -sV -p $(cat $DOMAIN/open-ports-$DOMAIN.txt) -iL $DOMAIN/nmap_targets-$DOMAIN.tmp -oA $DOMAIN/nmap_results-$DOMAIN
-	cat $DOMAIN/nmap_results-$DOMAIN.xml aquatone -scan-timeout 900 -nmap -out $DOMAIN/aquatone/ 
+	cat $DOMAIN/gobuster-endpoints-$DOMAIN.txt | sort -u | while read line || [[ -n $line ]];
+	do
+		gobuster dir -u $line -w "/home/recon/tools/raft-large-files-lowercase.txt" -t 10 -o $DOMAIN/gobuster-files-$DOMAIN.txt 
+	done
+	cat $DOMAIN/gobuster-files.tmp >> $DOMAIN/gobuster-files-$DOMAIN.txt
+	rm $DOMAIN/gobuster-files.tmp 	 
+}
+
+run_all() {
+	run_amass
+	run_massdns
+	run_masscan
+	run_nmap
+	run_aquatone
+	run_gobuster_recurse
+	run_gobuster_files
+	run_gobuster_vhosts
 }
 mkdir $DOMAIN
 
 case "$MODE" in
-passive)
-	passive
-	;;
-active)
-	active
-	;;
 all)
-	run_amass
-	run_massdns
-	run_masscan
-	run_nmap
-	run_aquatone
+	run_all
 	;;
 reset)
 	rm -rf $DOMAIN/
-	run_amass
-	run_massdns
-	run_masscan
-	run_nmap
-	run_aquatone
+	run_all
 	;;
 esac
 
