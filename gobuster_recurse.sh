@@ -51,8 +51,8 @@ elif [[ ! "$LEVELS" =~ ^[0-9]+$ ]]; then
     exit 5
 fi
 
-if [ ! -e "$FILENAME" ]; then
-    FILENAME="gobuster_output.txt"
+if [ -z "${FILENAME}" ]; then
+    FILENAME="recursive_gobuster_output.txt"
 fi
 
 run_gobuster() {
@@ -65,7 +65,7 @@ run_gobuster() {
 
     if [ "${LEVEL}" -lt "${LEVELS}" ]; then
         #echo gobuster -f -q -e -k -r -t ${THREADS} -m dir -w "${WORDLIST}" -s "${RESPONSE_CODES}" -u ${TARGET} -a "${USER_AGENT}" 
-        gobuster dir -f -q -e -k -r -t ${THREADS} -w "${WORDLIST}" -s "${RESPONSE_CODES}" -u ${TARGET} -a "${USER_AGENT}" | grep 'http.*Status: [234]' | sed 's/ (Status.*//' | while read HIT; do
+        gobuster dir -f -q -e -k -r -t ${THREADS} -w "${WORDLIST}" -s "${RESPONSE_CODES}" -u "${TARGET}" -a "${USER_AGENT}" | grep 'http.*Status: [234]' | sed 's/ (Status.*//' | while read HIT; do
             echo "[+] Found $HIT"
             echo $HIT >> $FILENAME
             run_gobuster ${HIT} ${NEXT_LEVEL}

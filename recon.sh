@@ -1,6 +1,6 @@
 #!/bin/bash
 
-whoami 
+set -x
 
 display_usage() { 
 	echo -e "Usage:\n ./recon.sh DOMAIN WORDLIST BLACKLIST (pass example.com if none) MODE (active, passive, all) EXISTING_LIST \n\n DOMAIN - comma separated list of domains, WORDLIST - wordlist to be used, BLACKLIST - comma separated list of domains out of scope" 
@@ -31,6 +31,10 @@ SED=s/$/.$DOMAIN/
 
 #INTERNAL VARIABLES
 WORDLIST_DIR="/home/recon/tools/wordlists"
+
+run_large_amass() {
+amass enum -passive -o large/amass-out.txt -aw $WORDLIST -bl $BLACKLIST -df $DOMAIN -config config.ini
+}
 
 run_amass() {
 	echo "AMASS"
@@ -88,17 +92,26 @@ run_masscan() {
 }
 
 run_httprobe() {
-	if [ -s "$DOMAIN/massdns-$DOMAIN.out"]; then
+	if [ ! -s "$DOMAIN/massdns-$DOMAIN.out" ]; then
+		echo "no file $DOMAIN/massdns-$DOMAIN.out, exiting"
 		return
 	fi
-	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $1}' | httprobe > $DOMAIN/webservers-live-domains-$DOMAIN.txt
+
+	if [ -s "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ]; then
+		echo "httprobe already done, skipping"
+		return
+	fi
+
+	#sort by third unique column (IP), then print first column (domain)
+	cat $DOMAIN/massdns-$DOMAIN.out | sort -u -t ' ' -k 3,3 | awk '{print $1}' | sed -r 's/\.$//' | httprobe > $DOMAIN/webservers-live-domains-$DOMAIN.txt
 }
 
 run_gospider() {
-	if [ -s "$DOMAIN/webservers-live-domains-$DOMAIN.txt"]; then
+	if [ ! -s "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ]; then
 		return
 	fi	
-	gospider -S $DOMAIN/webservers-live-domains-$DOMAIN.txt -t 10 -o $DOMAIN/spidered-content-$DOMAIN.txt -q
+	gospider -S $DOMAIN/webservers-live-domains-$DOMAIN.txt -t 10 -q > $DOMAIN/spidered-content-$DOMAIN.txt
+	gospider -S $DOMAIN/gobuster-endpoints-$DOMAIN.txt -t 10 -q >> $DOMAIN/spidered-content-$DOMAIN.txt
 }
 
 run_nmap() {
@@ -122,13 +135,13 @@ run_aquatone() {
 }
 
 run_gobuster_recurse() {
-	if [ ! -e "$DOMAIN/aquatone/aquatone_urls.txt" ] || [ -s "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
+	if [ ! -e "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ] || [ -s "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
 		return
 	fi
 	#[[ -n $line ]] so it doesn't skip last line if there's no empty newline
-	cat $DOMAIN/aquatone/aquatone_urls.txt | while read line || [[ -n $line ]];
+	cat $DOMAIN/webservers-live-domains-$DOMAIN.txt | while read line || [[ -n $line ]];
 	do
-		$(pwd)/gobuster_recurse.sh $line "$WORDLIST_DIR/raft-medium-directories.txt" 2 $DOMAIN/gobuster-endpoints-$DOMAIN.txt
+		$(pwd)/gobuster_recurse.sh $line "$WORDLIST_DIR/common.txt" 2 $DOMAIN/gobuster-endpoints-$DOMAIN.txt
 	done 
 }
 
@@ -182,6 +195,8 @@ run_http() {
 	run_amass
 	run_massdns
 	run_httprobe
+	run_gobuster_recurse
+	run_gospider
 }
 mkdir $DOMAIN
 
@@ -189,6 +204,12 @@ case "$MODE" in
 all)
 	run_all
 	;;
+http)
+	run_http
+	;;
+large)
+	run_large_amass
+	;;		
 reset)
 	rm -rf $DOMAIN/
 	run_all
