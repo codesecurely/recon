@@ -33,7 +33,7 @@ SED=s/$/.$DOMAIN/
 WORDLIST_DIR="/home/recon/tools/wordlists"
 
 run_large_amass() {
-amass enum -passive -o large/amass-out.txt -aw $WORDLIST -bl $BLACKLIST -df $DOMAIN -config config.ini
+	amass enum -passive -o large/amass-out.txt -aw $WORDLIST -bl $BLACKLIST -df $DOMAIN -config config.ini
 }
 
 run_amass() {
@@ -82,6 +82,10 @@ run_massdns() {
 }
 
 run_masscan() {
+	if [ $EUID != 0 ]; then
+		echo "[!] This script must be launched as root."
+		exit 1
+	fi
 	if [ -s "$DOMAIN/nmap_targets-$DOMAIN.tmp" ]; then
 		return
 	fi
@@ -115,6 +119,10 @@ run_gospider() {
 }
 
 run_nmap() {
+	if [ $EUID != 0 ]; then
+		echo "[!] This script must be launched as root."
+		exit 1
+	fi
 	if [ -s "$DOMAIN/nmap_results-$DOMAIN.xml" ]; then
 		return
 	fi
@@ -150,11 +158,12 @@ run_gobuster_vhosts() {
 		return
 	fi
 	#[[ -n $line ]] so it doesn't skip last line if there's no empty newline
-	cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $1}' | sort -u | sed 's/.$//' | while read line || [[ -n $line ]];
-	do
-		gobuster vhost -u $line -w "$WORDLIST_DIR/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
-		cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt	
-	done
+	#cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $1}' | sort -u | sed 's/.$//' | while read line || [[ -n $line ]];
+	#do
+	#	gobuster vhost -u $line -w "$WORDLIST_DIR/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
+	#	cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt	
+	#done
+	#
 	for i in $(echo $DOMAIN | tr "," "\n")
 	do
 		gobuster vhost -u $i -w "$WORDLIST_DIR/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
