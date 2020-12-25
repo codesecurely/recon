@@ -114,8 +114,11 @@ run_gospider() {
 	if [ ! -s "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ]; then
 		return
 	fi	
-	gospider -S $DOMAIN/webservers-live-domains-$DOMAIN.txt -t 10 -q > $DOMAIN/spidered-content-$DOMAIN.txt
-	gospider -S $DOMAIN/gobuster-endpoints-$DOMAIN.txt -t 10 -q >> $DOMAIN/spidered-content-$DOMAIN.txt
+	gospider -S $DOMAIN/webservers-live-domains-$DOMAIN.txt -q -t 2 -c 5 -d 3 --blacklist jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,svg > $DOMAIN/spidered-content-$DOMAIN.tmp
+	if [ -s "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
+		gospider -S $DOMAIN/gobuster-endpoints-$DOMAIN.txt -q -t 2 -c 5 -d 3 --blacklist jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,svg >> $DOMAIN/spidered-content-$DOMAIN.tmp
+	fi
+	cat $DOMAIN/spidered-content-$DOMAIN.tmp | grep -o -E "(([a-zA-Z][a-zA-Z0-9+-.]*\:\/\/)|mailto|data\:)([a-zA-Z0-9\.\&\/\?\:@\+-\_=#%;,])*" | sort -u | qsreplace -a > $DOMAIN/spidered-content-$DOMAIN.txt
 }
 
 run_nmap() {
@@ -164,7 +167,7 @@ run_gobuster_vhosts() {
 	#	cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt	
 	#done
 	#
-	for i in $(echo $DOMAIN | tr "," "\n")
+	for i in $(cat $DOMAIN/webservers-live-domains-$DOMAIN.txt)
 	do
 		gobuster vhost -u $i -w "$WORDLIST_DIR/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
 		cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt		
@@ -173,7 +176,7 @@ run_gobuster_vhosts() {
 }
 
 run_gobuster_files() {
-	for i in $(echo $DOMAIN | tr "," "\n")
+	for i in $(cat $DOMAIN/webservers-live-domains-$DOMAIN.txt)
 	do
 		gobuster dir -s 200,204 -u $i -w "$WORDLIST_DIR/raft-large-files-lowercase.txt" -t 10 -o $DOMAIN/gobuster-files.tmp
 	
@@ -201,8 +204,8 @@ run_all() {
 }
 
 run_http() {
-	run_amass
-	run_massdns
+	#run_amass
+	#run_massdns
 	run_httprobe
 	run_gobuster_recurse
 	run_gospider

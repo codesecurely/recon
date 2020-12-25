@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 TARGET="$1"
 WORDLIST="$2"
