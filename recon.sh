@@ -29,6 +29,9 @@ EXISTING_LIST=$5
 
 SED=s/$/.$DOMAIN/
 
+#array for referencing input domains
+DOMAINS=($(echo $DOMAIN | tr ',' ' '))
+
 #INTERNAL VARIABLES
 WORDLIST_DIR="/home/recon/tools/wordlists"
 
@@ -95,29 +98,38 @@ run_masscan() {
 	cat $DOMAIN/masscan-$DOMAIN.xml | grep portid | cut -d "\"" -f 4 | sort -V | uniq > $DOMAIN/nmap_targets-$DOMAIN.tmp
 }
 
-run_httprobe() {
+run_httpx() {
 	if [ ! -s "$DOMAIN/massdns-$DOMAIN.out" ]; then
 		echo "no file $DOMAIN/massdns-$DOMAIN.out, exiting"
 		return
 	fi
 
 	if [ -s "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ]; then
-		echo "httprobe already done, skipping"
+		echo "httpx already done, skipping"
 		return
 	fi
 
 	#sort by third unique column (IP), then print first column (domain)
-	cat $DOMAIN/massdns-$DOMAIN.out | sort -u -t ' ' -k 3,3 | awk '{print $1}' | sed -r 's/\.$//' | httprobe > $DOMAIN/webservers-live-domains-$DOMAIN.txt
+	cat $DOMAIN/massdns-$DOMAIN.out | sort -u -t ' ' -k 3,3 | awk '{print $1}' | sed -r 's/\.$//' | httpx -ports 80,81,443,591,2082,2087,2095,2096,3000,8000,8001,8008,8080,8083,8443,8834,8888  > $DOMAIN/webservers-live-domains-$DOMAIN.txt
+}
+
+run_gau() {
+	for i in $(echo $DOMAIN | tr "," "\n")
+	do
+	gau -providers wayback,otx,commoncrawl $i | grep -v -E "(jpg|jpeg|gif|css|tif|tiff|png|ttf|woff|woff2|ico|svg)" >> $DOMAIN/spidered-content-$DOMAIN.tmp 
+	done 
 }
 
 run_gospider() {
 	if [ ! -s "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ]; then
 		return
-	fi	
+	fi
+	#quiet, threads=2, concurrent=5, depth=3	
 	gospider -S $DOMAIN/webservers-live-domains-$DOMAIN.txt -q -t 2 -c 5 -d 3 --blacklist jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,svg > $DOMAIN/spidered-content-$DOMAIN.tmp
 	if [ -s "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
 		gospider -S $DOMAIN/gobuster-endpoints-$DOMAIN.txt -q -t 2 -c 5 -d 3 --blacklist jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,svg >> $DOMAIN/spidered-content-$DOMAIN.tmp
 	fi
+	run_gau
 	cat $DOMAIN/spidered-content-$DOMAIN.tmp | grep -o -E "(([a-zA-Z][a-zA-Z0-9+-.]*\:\/\/)|mailto|data\:)([a-zA-Z0-9\.\&\/\?\:@\+-\_=#%;,])*" | sort -u | qsreplace -a > $DOMAIN/spidered-content-$DOMAIN.txt
 }
 
@@ -146,75 +158,65 @@ run_aquatone() {
 }
 
 run_gobuster_recurse() {
+	LEVEL=$1
 	if [ ! -e "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ] || [ -s "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
 		return
 	fi
 	#[[ -n $line ]] so it doesn't skip last line if there's no empty newline
 	cat $DOMAIN/webservers-live-domains-$DOMAIN.txt | while read line || [[ -n $line ]];
 	do
-		$(pwd)/gobuster_recurse.sh $line "$WORDLIST_DIR/common.txt" 2 $DOMAIN/gobuster-endpoints-$DOMAIN.txt
+		$(pwd)/gobuster_recurse.sh $line "$WORDLIST_DIR/common.txt" $LEVEL $DOMAIN/gobuster-endpoints-$DOMAIN.txt
 	done 
 }
 
 run_gobuster_vhosts() {
-	if [ ! -e "$DOMAIN/massdns-$DOMAIN.out" ] || [ -s "$DOMAIN/gobuster-vhosts-all.txt" ]; then
+	if [ ! -e "$DOMAIN/webservers-live-domains-$DOMAIN.txt" ] || [ -s "$DOMAIN/gobuster-vhosts-all.txt" ]; then
 		return
 	fi
-	#[[ -n $line ]] so it doesn't skip last line if there's no empty newline
-	#cat $DOMAIN/massdns-$DOMAIN.out | awk '{print $1}' | sort -u | sed 's/.$//' | while read line || [[ -n $line ]];
-	#do
-	#	gobuster vhost -u $line -w "$WORDLIST_DIR/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
-	#	cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt	
-	#done
-	#
-	for i in $(cat $DOMAIN/webservers-live-domains-$DOMAIN.txt)
+	cat $DOMAIN/webservers-live-domains-$DOMAIN.txt | while read line || [[ -n $line ]];
 	do
-		gobuster vhost -u $i -w "$WORDLIST_DIR/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
+		gobuster vhost -u $line -w "$WORDLIST_DIR/common-vhosts.txt" -o $DOMAIN/gobuster-vhosts.tmp
 		cat $DOMAIN/gobuster-vhosts.tmp >> $DOMAIN/gobuster-vhosts-all.txt		
 	done
 	rm $DOMAIN/gobuster-vhosts.tmp  
 }
 
 run_gobuster_files() {
-	for i in $(cat $DOMAIN/webservers-live-domains-$DOMAIN.txt)
+	cat $DOMAIN/webservers-live-domains-$DOMAIN.txt | while read line || [[ -n $line ]];
 	do
-		gobuster dir -s 200,204 -u $i -w "$WORDLIST_DIR/raft-large-files-lowercase.txt" -t 10 -o $DOMAIN/gobuster-files.tmp
-	
+		gobuster dir -s 200,204 -u $line -w "$WORDLIST_DIR/raft-large-files.txt" -t 10 -o $DOMAIN/gobuster-files.tmp
+		cat $DOMAIN/gobuster-files.tmp >> $DOMAIN/gobuster-files-$DOMAIN.txt
 	done
-	if [ ! -e "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
-		return
+	if [ -e "$DOMAIN/gobuster-endpoints-$DOMAIN.txt" ]; then
+		cat $DOMAIN/gobuster-endpoints-$DOMAIN.txt | sort -u | while read line || [[ -n $line ]];
+		do
+			gobuster dir -u $line -w "$WORDLIST_DIR/raft-large-files.txt" -t 10 -o $DOMAIN/gobuster-files.tmp
+			cat $DOMAIN/gobuster-files.tmp >> $DOMAIN/gobuster-files-$DOMAIN.txt 
+		done
 	fi
-	cat $DOMAIN/gobuster-endpoints-$DOMAIN.txt | sort -u | while read line || [[ -n $line ]];
-	do
-		gobuster dir -u $line -w "$WORDLIST_DIR/raft-large-files-lowercase.txt" -t 10 -o $DOMAIN/gobuster-files-$DOMAIN.txt 
-	done
-	cat $DOMAIN/gobuster-files.tmp >> $DOMAIN/gobuster-files-$DOMAIN.txt
-	rm $DOMAIN/gobuster-files.tmp 	 
+	cat $DOMAIN/gobuster-files-$DOMAIN.txt | sort -u > $DOMAIN/gobuster-files-$DOMAIN.txt
+	rm $DOMAIN/gobuster-files.tmp
 }
 
-run_all() {
+run_http() {
+	run_httpx
+	#run_gobuster_recurse 2
+	#run_gobuster_files
+	run_gospider
+}
+
+run_recon() {
 	run_amass
 	run_massdns
 	run_masscan
 	run_nmap
-	run_aquatone
-	run_gobuster_recurse
-	run_gobuster_files
-	run_gobuster_vhosts
 }
 
-run_http() {
-	#run_amass
-	#run_massdns
-	run_httprobe
-	run_gobuster_recurse
-	run_gospider
-}
 mkdir $DOMAIN
 
 case "$MODE" in
-all)
-	run_all
+recon)
+	run_recon
 	;;
 http)
 	run_http
@@ -228,5 +230,5 @@ reset)
 	;;
 esac
 
-
+chown -R recon:recon $DOMAIN/
 
