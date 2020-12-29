@@ -1,0 +1,56 @@
+@startuml
+
+title Recon pipeline
+start
+-> input: single or multiple FQDN comma-separated
+example.com
+example.com,example.org;
+fork
+    :amass;
+    -> output: list: fqdn;
+    note left: Enumerate domains\neither actively or passively
+fork again
+    :ldns-walk;
+    -> output: list: fqdn;
+end fork
+-> input: list: fqdn 
+input: list: resolvers;
+:massdns;
+-> output: list: fqdn | record type | ip or cname ;
+note left: fast resolving\nneed to have a list of resolvers
+fork
+    -> input: list: fqdn per unique IP;
+    :httpx;
+    -> output: list: proto:url:port;
+    note left: find live webservers
+    fork
+        -> input: list: proto:url:port;
+        :webanalyze;
+    fork again
+        -> input: list: proto:url:port;
+        :aquatone;
+    fork again
+        -> input: list: proto:url:port;
+        :gobuster\nvhosts;
+    fork again
+        -> input: list: proto:url:port;
+        :feroxbuster\ndirectories\n(recursive);
+        fork
+            :feroxbuster\nfiles;
+        fork again
+            :gospider;
+        fork again
+            :gau;
+        end fork
+        :merge endpoints\nusing qsreplace;
+    end fork
+    
+fork again
+    -> input: unique IPs;
+    :masscan;
+    -> output: open ports per IP;
+    :nmap;
+    -> output: open ports per IP, services;
+end fork
+stop
+@enduml
