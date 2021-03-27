@@ -233,5 +233,7 @@ reset)
 	;;
 esac
 
+# cleanup
+rm resolvers.txt
 chown -R recon:recon $DOMAIN/
 
