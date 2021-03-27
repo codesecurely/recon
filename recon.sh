@@ -48,7 +48,7 @@ run_amass() {
 		return
 	fi
 	echo "[STARTING AMASS]"
-	amass enum -active -brute -src -o $DOMAIN/out-amass.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN -config config.ini
+	amass enum -active -brute -src -o $DOMAIN/out-amass.txt -rf resolvers.txt -aw $WORDLIST -bl $BLACKLIST -d $DOMAIN -config config.ini
 	echo "[AMASS DONE]"
 	cat $DOMAIN/out-amass.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $DOMAIN/hosts-amass.txt
 	sed $SED $WORDLIST > $DOMAIN/hosts-wordlist.txt
