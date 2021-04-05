@@ -83,7 +83,7 @@ run_massdns() {
 	if [ -s "$DOMAIN/ips-online.txt" ]; then
 		return
 	fi
-	massdns --root -r resolvers.txt -t A -o S -w $DOMAIN/massdns.txt $DOMAIN/hosts-all.txt
+	massdns --root -q -r resolvers.txt -t A -o S -w $DOMAIN/massdns.txt $DOMAIN/hosts-all.txt
 	cat $DOMAIN/massdns.txt | awk '{print $3}' | sort -u | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" > $DOMAIN/ips-online.txt
 }
 
@@ -147,9 +147,9 @@ run_nmap() {
 	open_ports=$(cat $DOMAIN/masscan.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | wc -l)
 	
 	if [ $open_ports -le 100 ]; then
-		nmap -Pn -sC -sV -p $(cat $DOMAIN/open-ports.txt) -iL $DOMAIN/nmap_targets.tmp -oA $DOMAIN/nmap_results
+		nmap -Pn -sC -sV -p $(cat $DOMAIN/open-ports.txt) --open -iL $DOMAIN/nmap_targets.tmp -oA $DOMAIN/nmap_results
 	else
-		nmap -Pn -sC -sV -p- -v -iL $DOMAIN/nmap_targets.tmp -oA $DOMAIN/nmap_results
+		nmap -Pn -sC -sV -p- -v --open -iL $DOMAIN/nmap_targets.tmp -oA $DOMAIN/nmap_results
 	fi
 }
 
@@ -215,9 +215,16 @@ run_recon() {
 	run_nmap
 }
 
+run_domain_harvest() {
+	run_amass
+	run_massdns
+}
 mkdir $DOMAIN
 
 case "$MODE" in
+harvest)
+	run_domain_harvest
+	;;
 recon)
 	run_recon
 	;;
