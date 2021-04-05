@@ -36,7 +36,7 @@ DOMAINS=($(echo $DOMAIN | tr ',' ' '))
 WORDLIST_DIR="/home/recon/tools/wordlists"
 
 #download latest resolvers
-wget https://raw.githubusercontent.com/BonJarber/fresh-resolvers/main/resolvers.txt
+wget https://raw.githubusercontent.com/janmasarik/resolvers/master/resolvers.txt -O resolvers.txt
 
 run_large_amass() {
 	amass enum -passive -o large/amass-out.txt -aw $WORDLIST -bl $BLACKLIST -df $DOMAIN -config config.ini
