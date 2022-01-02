@@ -96,8 +96,8 @@ run_gospider() {
 	fi
 	#quiet, threads=2, concurrent=5, depth=3	
 	gospider -S $WORKDIR/$DOMAIN/webservers-live.txt -q -t 2 -c 5 -d 3 --blacklist jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,svg > $WORKDIR/$DOMAIN/spidered-content.tmp
-	if [ -s "$WORKDIR/$DOMAIN/gobuster-endpoints.txt" ]; then
-		gospider -S $WORKDIR/$DOMAIN/gobuster-endpoints.txt -q -t 2 -c 5 -d 3 --blacklist jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,svg >> $WORKDIR/$DOMAIN/spidered-content.tmp
+	if [ -s "$WORKDIR/$DOMAIN/feroxbuster-directories.txt" ]; then
+		gospider -S $WORKDIR/$DOMAIN/feroxbuster-directories.txt -q -t 2 -c 5 -d 3 --blacklist jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,svg >> $WORKDIR/$DOMAIN/spidered-content.tmp
 	fi
 	run_gau
 	cat $WORKDIR/$DOMAIN/spidered-content.tmp | grep -o -E "(([a-zA-Z][a-zA-Z0-9+-.]*\:\/\/)|mailto|data\:)([a-zA-Z0-9\.\&\/\?\:@\+-\_=#%;,])*" | sort -u | qsreplace -a > $WORKDIR/$DOMAIN/spidered-content.txt
@@ -127,16 +127,33 @@ run_aquatone() {
 	cat $WORKDIR/$DOMAIN/nmap_results.xml | aquatone -scan-timeout 900 -nmap -out $WORKDIR/$DOMAIN/aquatone/	
 }
 
-run_gobuster_recurse() {
+run_feroxbuster_recurse()
+{
 	LEVEL=$1
-	if [ ! -e "$WORKDIR/$DOMAIN/webservers-live.txt" ] || [ -s "$WORKDIR/$DOMAIN/gobuster-endpoints.txt" ]; then
+	if [ ! -e "$WORKDIR/$DOMAIN/webservers-live.txt" ] || [ -s "$WORKDIR/$DOMAIN/feroxbuster-directories.txt" ]; then
 		return
 	fi
 	#[[ -n $line ]] so it doesn't skip last line if there's no empty newline
 	cat $WORKDIR/$DOMAIN/webservers-live.txt | while read line || [[ -n $line ]];
 	do
-		$(pwd)/gobuster_recurse.sh $line "$WORDLIST_DIR/common.txt" $LEVEL $WORKDIR/$DOMAIN/gobuster-endpoints.txt
-	done 
+		feroxbuster -u $line -w "$WORDLIST_DIR/raft-medium-directories.txt" -d $LEVEL -o $WORKDIR/$DOMAIN/feroxbuster-directories.txt --random-agent --silent --auto-tune
+	done 	
+}
+
+run_feroxbuster_files()
+{
+	cat $WORKDIR/$DOMAIN/webservers-live.txt | while read line || [[ -n $line ]];
+	do
+		feroxbuster -u $line -w "$WORDLIST_DIR/raft-large-files.txt" -o $WORKDIR/$DOMAIN/feroxbuster-files.tmp --random-agent --silent --auto-tune --no-recursion
+		cat $WORKDIR/$DOMAIN/feroxbuster-files.tmp >> $WORKDIR/$DOMAIN/feroxbuster-files.txt
+	done
+	if [ -e "$WORKDIR/$DOMAIN/feroxbuster-directories.txt" ]; then
+		cat $WORKDIR/$DOMAIN/feroxbuster-directories.txt | sort -u | feroxbuster -w "$WORDLIST_DIR/raft-large-files.txt" -o $WORKDIR/$DOMAIN/feroxbuster-files.tmp --random-agent --silent --auto-tune --no-recursion --stdin
+		
+		cat $WORKDIR/$DOMAIN/feroxbuster-files.tmp >> $WORKDIR/$DOMAIN/feroxbuster-files.txt 
+	fi
+	cat $WORKDIR/$DOMAIN/feroxbuster-files.txt | sort -u > $WORKDIR/$DOMAIN/feroxbuster-files.txt
+	rm $WORKDIR/$DOMAIN/feroxbuster-files.tmp	
 }
 
 run_gobuster_vhosts() {
@@ -151,27 +168,11 @@ run_gobuster_vhosts() {
 	rm $WORKDIR/$DOMAIN/gobuster-vhosts.tmp  
 }
 
-run_gobuster_files() {
-	cat $WORKDIR/$DOMAIN/webservers-live.txt | while read line || [[ -n $line ]];
-	do
-		gobuster dir -s 200,204 -u $line -w "$WORDLIST_DIR/raft-large-files.txt" -t 10 -o $WORKDIR/$DOMAIN/gobuster-files.tmp
-		cat $WORKDIR/$DOMAIN/gobuster-files.tmp >> $WORKDIR/$DOMAIN/gobuster-files.txt
-	done
-	if [ -e "$WORKDIR/$DOMAIN/gobuster-endpoints.txt" ]; then
-		cat $WORKDIR/$DOMAIN/gobuster-endpoints.txt | sort -u | while read line || [[ -n $line ]];
-		do
-			gobuster dir -u $line -w "$WORDLIST_DIR/raft-large-files.txt" -t 10 -o $WORKDIR/$DOMAIN/gobuster-files.tmp
-			cat $WORKDIR/$DOMAIN/gobuster-files.tmp >> $WORKDIR/$DOMAIN/gobuster-files.txt 
-		done
-	fi
-	cat $WORKDIR/$DOMAIN/gobuster-files.txt | sort -u > $WORKDIR/$DOMAIN/gobuster-files.txt
-	rm $WORKDIR/$DOMAIN/gobuster-files.tmp
-}
 
 run_http() {
 	run_httpx
-	#run_gobuster_recurse 2
-	#run_gobuster_files
+	run_feroxbuster_recurse 3
+	run_feroxbuster_files
 	run_gospider
 }
 
@@ -204,7 +205,7 @@ run() {
 	esac
 }
 
-#INTERNAL VARIABLES
+#defaults
 BLACKLIST="example.com"
 WORKDIR="$(pwd)/loot"
 WORDLIST_DIR="/home/$USER/tools/wordlists"
