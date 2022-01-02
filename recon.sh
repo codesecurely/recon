@@ -32,7 +32,7 @@ run_amass() {
 	cat $WORKDIR/$DOMAIN/out-amass.txt | cut -d']' -f 2 | awk '{print $1}' | sort -u > $WORKDIR/$WORKDIR/$DOMAIN/hosts-all.txt
 	if [ -n "$EXISTING_LIST" ]; then
 		cat $EXISTING_LIST >> $WORKDIR/$DOMAIN/hosts-all.txt
-		cat $WORKDIR/$DOMAIN/hosts-all.txt | sort -u > $WORKDIR/$DOMAIN/hosts-all.txt
+		sort -u -o $WORKDIR/$DOMAIN/hosts-all.txt $WORKDIR/$DOMAIN/hosts-all.txt
 	fi	
 
 }
@@ -43,7 +43,7 @@ run_ldns_walk() {
 	fi
 	ldns-walk $DOMAIN | awk '{print $1}' >> $WORKDIR/$DOMAIN/hosts-ldnswalk.txt
 	echo "[LDNS-WALK DONE]"
-	cat $WORKDIR/$DOMAIN/hosts-all.txt $WORKDIR/$DOMAIN/hosts-ldnswalk.txt | sort -u > $WORKDIR/$DOMAIN/hosts-all.txt
+	sort -u $WORKDIR/$DOMAIN/hosts-all.txt $WORKDIR/$DOMAIN/hosts-ldnswalk.txt -o $WORKDIR/$DOMAIN/hosts-all.txt
 
 }
 
@@ -144,15 +144,15 @@ run_feroxbuster_files()
 {
 	cat $WORKDIR/$DOMAIN/webservers-live.txt | while read line || [[ -n $line ]];
 	do
-		feroxbuster -u $line -w "$WORDLIST_DIR/raft-large-files.txt" -o $WORKDIR/$DOMAIN/feroxbuster-files.tmp --random-agent --silent --auto-tune --no-recursion
+		feroxbuster -u $line -w "$WORDLIST_DIR/raft-medium-files.txt" -o $WORKDIR/$DOMAIN/feroxbuster-files.tmp --random-agent --silent --auto-tune --no-recursion
 		cat $WORKDIR/$DOMAIN/feroxbuster-files.tmp >> $WORKDIR/$DOMAIN/feroxbuster-files.txt
 	done
 	if [ -e "$WORKDIR/$DOMAIN/feroxbuster-directories.txt" ]; then
-		cat $WORKDIR/$DOMAIN/feroxbuster-directories.txt | sort -u | feroxbuster -w "$WORDLIST_DIR/raft-large-files.txt" -o $WORKDIR/$DOMAIN/feroxbuster-files.tmp --random-agent --silent --auto-tune --no-recursion --stdin
+		cat $WORKDIR/$DOMAIN/feroxbuster-directories.txt | sort -u | feroxbuster -w "$WORDLIST_DIR/raft-medium-files.txt" -o $WORKDIR/$DOMAIN/feroxbuster-files.tmp --random-agent --silent --auto-tune --no-recursion --stdin
 		
 		cat $WORKDIR/$DOMAIN/feroxbuster-files.tmp >> $WORKDIR/$DOMAIN/feroxbuster-files.txt 
 	fi
-	cat $WORKDIR/$DOMAIN/feroxbuster-files.txt | sort -u > $WORKDIR/$DOMAIN/feroxbuster-files.txt
+	sort -u -o $WORKDIR/$DOMAIN/feroxbuster-files.txt $WORKDIR/$DOMAIN/feroxbuster-files.txt
 	rm $WORKDIR/$DOMAIN/feroxbuster-files.tmp	
 }
 
